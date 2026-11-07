@@ -1,0 +1,60 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mapa — Os Sons do Brasil</title><style>
+:root{--green:#284b3b;--gold:#b18a4b;--paper:#f5efdf;--ink:#292820;--muted:#786f5d}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px Georgia,serif}
+header{padding:22px 5vw;background:#284b3b;color:#f8f1df;border-bottom:5px solid #b18a4b}
+h1{margin:0;font-size:clamp(25px,4vw,38px);font-weight:500;letter-spacing:.03em}
+header p{margin:8px 0 0;color:#e6dcc7}
+main{max-width:1200px;margin:auto;padding:24px;display:grid;grid-template-columns:minmax(300px,1.15fr) minmax(280px,.85fr);gap:24px}
+.panel{background:#fffaf0;border:1px solid #d8c9a9;border-radius:14px;padding:18px;box-shadow:0 5px 18px #493b1a12}
+#map{width:100%;min-height:420px;display:flex;align-items:center;justify-content:center}
+#map svg{width:100%;height:auto;max-height:680px}
+.state{fill:#c9b78f;stroke:#fffaf0;stroke-width:.7;cursor:pointer;transition:fill .15s}
+.state:hover,.state.selected{fill:#b18a4b;stroke:#284b3b;stroke-width:1.5}
+h2{font-weight:500;color:var(--green);margin:0 0 12px}
+label{display:block;font-size:14px;color:var(--muted);margin:12px 0 5px}
+input[type=text],textarea,select{width:100%;padding:10px;border:1px solid #cdbf9f;border-radius:8px;background:#fffdf8;font:inherit;color:var(--ink)}
+textarea{min-height:110px;resize:vertical}
+button,.filebtn{background:var(--green);color:#fff8e9;border:0;border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;margin:5px 5px 5px 0}
+button.secondary{background:#e8deca;color:var(--green);border:1px solid #cdbf9f}
+button:disabled{opacity:.45;cursor:not-allowed}
+#stateList{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+#stateList button{font:13px Arial;padding:7px 9px;margin:0;background:#e8deca;color:#284b3b}
+#stateList button.active{background:#b18a4b;color:#201b12}
+audio{width:100%;margin-top:10px}
+.note{font:13px Arial;color:var(--muted);line-height:1.45}
+.actions{margin-top:12px;border-top:1px solid #e1d5bd;padding-top:12px}
+#status{font:13px Arial;color:var(--muted);margin-top:10px}
+@media(max-width:760px){main{grid-template-columns:1fr;padding:14px}#map{min-height:300px}}
+</style></head><body>
+<header><h1>Os Sons do Brasil</h1><p>Mapa interativo · Explore os sons e as pronúncias pelo país</p></header>
+<main><section class="panel"><h2>Escolha um estado no mapa</h2><div id="map">Carregando mapa…</div><div id="stateList"></div><div id="status">Carregando o mapa…</div></section>
+<section class="panel"><h2 id="stateTitle">Acre</h2><p id="description">Selecione um estado para conhecer os exemplos de pronúncia.</p><audio id="player" controls></audio><p class="note" id="audioInfo">Ainda não há gravação para este estado.</p>
+<div class="actions"><label class="filebtn" for="importFile">Carregar arquivo de conteúdo do editor</label><input id="importFile" type="file" accept="application/json" hidden><p class="note">Use o arquivo JSON exportado pelo editor para carregar as descrições e os áudios da apresentação.</p></div>
+</section></main>
+<script>
+const GEO='https://raw.githubusercontent.com/codeforamerica/click_that_hood/main/public/data/brazil-states.geojson';
+const states=['Acre','Alagoas','Amapá','Amazonas','Bahia','Ceará','Distrito Federal','Espírito Santo','Goiás','Maranhão','Mato Grosso','Mato Grosso do Sul','Minas Gerais','Pará','Paraíba','Paraná','Pernambuco','Piauí','Rio de Janeiro','Rio Grande do Norte','Rio Grande do Sul','Rondônia','Roraima','Santa Catarina','São Paulo','Sergipe','Tocantins'];
+let selected='Acre',features=[];
+const $=id=>document.getElementById(id);
+function slug(s){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()}
+function coordsOf(g,out=[]){if(!g)return out;if(g.type==='Polygon')g.coordinates.forEach(r=>r.forEach(p=>out.push(p)));else if(g.type==='MultiPolygon')g.coordinates.forEach(poly=>poly.forEach(r=>r.forEach(p=>out.push(p))));return out}
+function pathOf(g,project){let d='';function ring(r){r.forEach((p,i)=>{let [x,y]=project(p);d+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1)});d+='Z'}if(g.type==='Polygon')g.coordinates.forEach(ring);else if(g.type==='MultiPolygon')g.coordinates.forEach(poly=>poly.forEach(ring));return d}
+function selectState(name){selected=name;document.querySelectorAll('.state').forEach(el=>el.classList.toggle('selected',el.dataset.name===name));document.querySelectorAll('#stateList button').forEach(el=>el.classList.toggle('active',el.dataset.name===name));onStateChanged(name)}
+function renderMap(data){
+ features=data.features;let all=[];features.forEach(f=>coordsOf(f.geometry,all));let xs=all.map(p=>p[0]),ys=all.map(p=>p[1]);let minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+ const W=650,H=680,pad=12,scale=Math.min((W-2*pad)/(maxX-minX),(H-2*pad)/(maxY-minY));
+ const project=p=>[pad+(p[0]-minX)*scale,H-pad-(p[1]-minY)*scale];
+ let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa interativo dos estados do Brasil">`;
+ features.forEach(f=>{let name=f.properties.name;svg+=`<path class="state" data-name="${name}" d="${pathOf(f.geometry,project)}"><title>${name}</title></path>`});
+ svg+='</svg>';$('map').innerHTML=svg;
+ document.querySelectorAll('.state').forEach(el=>el.addEventListener('click',()=>selectState(el.dataset.name)));
+ $('stateList').innerHTML=states.map(n=>`<button data-name="${n}">${n}</button>`).join('');
+ document.querySelectorAll('#stateList button').forEach(el=>el.addEventListener('click',()=>selectState(el.dataset.name)));
+ selectState(selected);$('status').textContent='Mapa carregado: 26 estados + Distrito Federal.';
+}
+fetch(GEO).then(r=>{if(!r.ok)throw Error('Não foi possível carregar o mapa');return r.json()}).then(renderMap).catch(()=>{$('status').textContent='Não foi possível carregar o desenho do mapa. Confira a conexão e recarregue a página. A lista de estados continua disponível abaixo.';$('stateList').innerHTML=states.map(n=>`<button data-name="${n}">${n}</button>`).join('');document.querySelectorAll('#stateList button').forEach(el=>el.addEventListener('click',()=>selectState(el.dataset.name)));});
+
+let db={};
+function onStateChanged(name){$('stateTitle').textContent=name;$('description').textContent=db[name]?.description||'Ainda não há observações cadastradas para este estado.';$('player').src=db[name]?.audio||'';$('audioInfo').textContent=db[name]?.audio?'Gravação disponível para '+name+'.':'Ainda não há gravação para este estado.'}
+$('importFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result).states||{};onStateChanged(selected);alert('Conteúdo carregado para a apresentação.')}catch{alert('Arquivo inválido.')}};r.readAsText(f)}
+</script></body></html>
